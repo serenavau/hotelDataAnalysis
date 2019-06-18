@@ -1,0 +1,219 @@
+library(tidyverse)
+library(tidytext)
+library(dplyr)
+library(ggplot2)
+library(stringr)
+library(igraph)
+library(ggraph)
+
+load("C:/Users/user/Desktop/docs/SKRIPSIAN/DATA/textcompiled.RData") #load data
+
+#unnest per word
+single_words <- df_all %>%
+  unnest_tokens(word, text)
+
+#clean stop words
+cleaned_sw <- single_words %>%
+  anti_join(stop_words)
+
+#count words from all hotels
+count_sw_all <- cleaned_sw %>%
+  count(word, sort = TRUE) 
+
+write_csv(count_sw_all, path = "C:/Users/user/Desktop/docs/SKRIPSIAN/DATA/sw_all.csv")
+
+#count words from each hotel
+count_sw_each <- cleaned_sw %>%
+  group_by(hotel) %>%
+  count(word, sort = TRUE) %>%
+  top_n(10)
+
+write_csv(count_sw_each, path = "C:/Users/user/Desktop/docs/SKRIPSIAN/DATA/sw_each.csv")
+
+
+#Alaya Resort single words
+sw_Alaya <- df_AlayaResort %>%
+  unnest_tokens(word, text)
+
+cleaned_sw_Alaya <- sw_Alaya %>%
+  anti_join(stop_words)
+
+count_sw_Alaya <- cleaned_sw_Alaya %>%
+  count(word, sort = TRUE) 
+
+
+#visualization for all hotels
+vis_sw_all <- cleaned_sw %>%
+  count(word, sort = TRUE) %>%
+  top_n(10) %>%
+  ggplot(aes(reorder(word, n), y = n, fill = "#0000FF")) +
+  geom_bar(stat = "identity") +
+  geom_text(aes(label = n), position = position_dodge(width = 0.9), hjust = -0.25, size = 3) +
+  labs(title = "Top 10 Words Across All Hotels", x = "Words", y = "Frequency") +
+  coord_flip() +
+  theme(legend.position = "none")
+
+#visualization for Alaya
+vis_sw_Alaya <- cleaned_sw_Alaya %>%
+  count(word, sort = TRUE) %>%
+  top_n(10) %>%
+  ggplot(aes(reorder(word, n), y = n, fill = "#0000FF")) +
+  geom_bar(stat = "identity") +
+  geom_text(aes(label = n), position = position_dodge(width = 0.9), hjust = -0.25, size = 3) +
+  labs(title = "Top 10 Words of Alaya Resort", x = "Words", y = "Frequency") +
+  coord_flip() +
+  theme(legend.position = "none")
+
+
+#calculate percent of word used across all hotels  
+sw_pct <- count_sw_all %>%
+  transmute(word, all_words = n / sum(n))
+
+staff_pct1 <- count_sw_all %>%
+  filter(word == "staff") %>%
+  transmute(word, all_words = n / sum(n))
+
+write_csv(sw_pct, path = "C:/Users/user/Desktop/docs/SKRIPSIAN/DATA/sw_pct.csv")
+
+
+#calculate percent of word used within each hotel  
+freq_sw <- count_sw_Alaya %>%
+  mutate(Alaya_words = n/ sum(n)) %>%
+  left_join(sw_pct) %>%
+  filter(word == "staff") %>%
+  arrange(desc(Alaya_words)) %>%
+  ungroup()
+
+
+write_csv(freq_sw, path = "C:/Users/user/Desktop/docs/SKRIPSIAN/DATA/freq_sw.csv")
+
+ggplot(freq_sw, aes(x = Alaya_words, y = all_words, color = abs(all_words - Alaya_words))) +
+  geom_abline(color = "gray40", lty = 2) +
+  geom_jitter(alpha = 0.1, size = 2.5, width = 0.3, height = 0.3) +
+  geom_text(aes(label = word), check_overlap = TRUE, vjust = 1.5) +
+  scale_x_log10(labels = scales::percent_format()) +
+  scale_y_log10(labels = scales::percent_format()) +
+  scale_color_gradient(limits = c(0, 0.001), low = "darkslategray4", high = "gray75") +
+  theme(legend.position="none") +
+  labs(title = "Frequency Similarity Between Words", y = "All Hotels", x = "Alaya Resort")
+
+
+#correlation between words
+corr_sw <- freq_sw %>%
+  summarize(correlation = cor(Alaya_words, all_words),
+            p_value = cor.test(Alaya_words, all_words)$p.value)
+
+write_csv(corr_sw, path = "C:/Users/user/Desktop/docs/SKRIPSIAN/DATA/corr_sw.csv")
+
+
+
+#unnest bigrams
+bigram_words <- df_all %>% 
+  unnest_tokens(bigram, text, token = "ngrams", n = 2)
+
+#cleaned bigrams
+cleaned_bg <- bigram_words %>%
+  separate(bigram, c("word1", "word2"), sep = " ") %>%
+  filter(!word1 %in% stop_words$word,
+         !word2 %in% stop_words$word)
+
+#count bigrams for all hotels
+count_bg_all <- cleaned_bg %>%
+  count(word1, word2, sort = TRUE) %>%
+  unite("bigram", c(word1, word2), sep = " ")
+
+write_csv(count_bg_all, path = "C:/Users/user/Desktop/docs/SKRIPSIAN/DATA/bg_all.csv")
+
+
+#Alaya Resort bigrams
+bg_Alaya <- df_AlayaResort %>% 
+  unnest_tokens(bigram, text, token = "ngrams", n = 2)
+
+cleaned_bg_Alaya <- bg_Alaya %>%
+  separate(bigram, c("word1", "word2"), sep = " ") %>%
+  filter(!word1 %in% stop_words$word,
+         !word2 %in% stop_words$word)
+
+count_bg_Alaya <- cleaned_bg_Alaya %>%
+  count(word1, word2, sort = TRUE) %>%
+  unite("bigram", c(word1, word2), sep = " ")
+
+
+#visualization for all hotels
+vis_bg_all <- cleaned_bg %>%
+  count(word1, word2, sort = TRUE) %>%
+  unite("bigram", c(word1, word2), sep = " ") %>%
+  top_n(10) %>%
+  ggplot(aes(fct_reorder(bigram, n), n), fill = "#FF3333") +
+  geom_bar(stat = "identity") +
+  geom_text(aes(label = n), position = position_dodge(width = 0.9), hjust = -0.25, size = 3) +
+  labs(title = "Top 10 Bigrams Across All Hotels", x = "Bigrams", y = "Frequency") +
+  coord_flip() 
+
+#visualization for Alaya
+vis_bg_Alaya <- cleaned_bg_Alaya %>%
+  count(word1, word2, sort = TRUE) %>%
+  unite("bigram", c(word1, word2), sep = " ") %>%
+  top_n(10) %>%
+  ggplot(aes(fct_reorder(bigram, n), n), fill = "#FF3333") +
+  geom_bar(stat = "identity") +
+  geom_text(aes(label = n), position = position_dodge(width = 0.9), hjust = -0.25, size = 3) +
+  labs(title = "Top 10 Bigrams of Alaya Resort", x = "Bigrams", y = "Frequency") +
+  coord_flip() 
+
+
+#calculate percent of word used across all hotels  
+bg_pct <- count_bg_all %>%
+  transmute(bigram, all_bg_words = n / sum(n))
+
+write_csv(bg_pct, path = "C:/Users/user/Desktop/docs/SKRIPSIAN/DATA/bg_pct.csv")
+
+#calculate percent of word used within each hotel  
+freq_bg <- count_bg_Alaya %>%
+  mutate(Alaya_bg_words = n / sum(n)) %>%
+  left_join(bg_pct) %>%
+  arrange(desc(Alaya_bg_words)) %>%
+  ungroup()
+
+write_csv(freq_bg, path = "C:/Users/user/Desktop/docs/SKRIPSIAN/DATA/freq_bg.csv")
+
+ggplot(freq_bg, aes(x = Alaya_bg_words, y = all_bg_words, color = abs(all_bg_words - Alaya_bg_words))) +
+  geom_abline(color = "gray40", lty = 2) +
+  geom_jitter(alpha = 0.1, size = 2.5, width = 0.3, height = 0.3) +
+  geom_text(aes(label = bigram), check_overlap = TRUE, vjust = 1.5) +
+  scale_x_log10(labels = scales::percent_format()) +
+  scale_y_log10(labels = scales::percent_format()) +
+  scale_color_gradient(limits = c(0, 0.001), low = "darkslategray4", high = "gray75") +
+  theme(legend.position="none") +
+  labs(title = "Frequency Similarity Between Bigrams", y = "All Hotels", x = "Alaya Resort")
+
+
+#correlation between bigrams
+corr_bg <- freq_bg %>%
+  summarize(correlation = cor(Alaya_bg_words, all_bg_words),
+            p_value = cor.test(Alaya_bg_words, all_bg_words)$p.value)
+
+write_csv(corr_bg, path = "C:/Users/user/Desktop/docs/SKRIPSIAN/DATA/corr_bg.csv")
+
+#staff as most frequent words
+staff_bg <- cleaned_bg %>%
+  count(word1, word2, sort = TRUE) %>%
+  filter(word1 == "staff", n > 20) 
+  
+(staff_graph <- staff_bg %>%
+    count(word1, word2, sort = TRUE) %>%
+    filter(word1 == "staff", n > 20) %>%
+    graph_from_data_frame()
+)
+
+#visualize network
+set.seed(9)
+
+a <- grid::arrow(type = "closed", length = unit(.15, "inches"))
+
+ggraph(staff_graph, layout = "fr") +
+  geom_edge_link(alpha = 0.2, arrow = a) +
+  geom_node_point() +
+  geom_node_text(aes(label = name), repel = TRUE, vjust = 1, hjust = 1) +
+  theme(legend.position="none") +
+  theme_graph()
